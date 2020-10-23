@@ -1,0 +1,80 @@
+---
+title: "Bacterial Abundance Oceana"
+author: "Oceana Tavasieff"
+date: "10/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Intro
+
+In which data on individual bottle bacterial abundance data from ACIDD experiements is processed, quality controlled, and analyzed. 
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+# Import data
+
+```{r}
+excel_sheets("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD_Exp_BactAbund.xlsx")
+
+metadata <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD_Exp_BactAbund.xlsx", sheet = "Metadata")
+
+#glimpse(metadata)
+
+unique(metadata$Experiment)
+unique(metadata$Location)
+unique(metadata$Bottle)
+unique(metadata$Treatment)
+
+# Two experiments conducted @ two locations. 
+# Four bottles/type total (A-D), with Control (A and B) and Ash Leachate treatment (C and D)
+
+data <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD_Exp_BactAbund.xlsx", sheet = "Data")
+
+#glimpse(data)
+
+# Shared columns between these two sheets (Data and Metadata).
+# Combine into one datasheet
+
+joined <- left_join (metadata, data) #left_join joins the right dataset to the left dataset
+
+#names(joined) # Check our join function
+#glimpse(joined)
+#summary(joined)
+
+#NA values for Cell_Sample (in Cells/mL)
+```
+
+# Prepare Data
+
+Convert date and time columns from character to date values. Add columns with time elapsed for each experiment (subsetting data by experiment).
+Cells/mL to Cells/L (DOC units are in umol C/L). Remove extraneous columns. Drop NA's
+
+
+```{r}
+cells <- joined %>%  
+  mutate(Datetime= ymd_hm(Datetime), 
+                            cells = Cells_ml * 1000, 
+                                sd_cells = Cells_ml_sd * 1000) %>% group_by(Experiment, Treatment, Bottle) %>%  
+  mutate(interv = interval(first(Datetime),Datetime), 
+         hours = interv/3600, 
+         days = hours/24) %>% #ungroup() %>%
+  select(Experiment:Nutrient_Sample, hours, days, cells, sd_cells) %>% drop_na(cells)
+
+#trouble with interval function again, not reporting interval. use as.duration()?
+
+
+cells1 <-cells
+cells1$hours = as.duration(cells1$hours)
+  
+mode(cells1$hours)
+```
+
+
