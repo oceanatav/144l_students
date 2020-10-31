@@ -1,19 +1,14 @@
----
-title: "Bacterial Abundance Oceana"
-author: "Oceana Tavasieff"
-date: "10/21/2020"
-output: github_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
+Bacterial Abundance Oceana
+================
+Oceana Tavasieff
+10/21/2020
 
 # Intro
 
-In which data on individual bottle bacterial abundance data from ACIDD experiements is processed, quality controlled, and analyzed. 
+In which data on individual bottle bacterial abundance data from ACIDD
+experiements is processed, quality controlled, and analyzed.
 
-```{r message=FALSE, warning=FALSE}
+``` r
 library(tidyverse)
 library(readxl)
 library(lubridate)
@@ -21,18 +16,41 @@ library(lubridate)
 
 # Import data
 
-```{r}
+``` r
 excel_sheets("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD_Exp_BactAbund.xlsx")
+```
 
+    ## [1] "Metadata" "Data"
+
+``` r
 metadata <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD_Exp_BactAbund.xlsx", sheet = "Metadata")
 
 #glimpse(metadata)
 
 unique(metadata$Experiment)
-unique(metadata$Location)
-unique(metadata$Bottle)
-unique(metadata$Treatment)
+```
 
+    ## [1] "ASH171" "ASH172"
+
+``` r
+unique(metadata$Location)
+```
+
+    ## [1] "San Diego"     "Santa Barbara"
+
+``` r
+unique(metadata$Bottle)
+```
+
+    ## [1] "A" "B" "C" "D"
+
+``` r
+unique(metadata$Treatment)
+```
+
+    ## [1] "Control"      "Ash Leachate"
+
+``` r
 # Two experiments conducted @ two locations. 
 # Four bottles/type total (A-D), with Control (A and B) and Ash Leachate treatment (C and D)
 
@@ -44,7 +62,11 @@ data <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week3/ACIDD
 # Combine into one datasheet
 
 joined <- left_join (metadata, data) #left_join joins the right dataset to the left dataset
+```
 
+    ## Joining, by = c("Experiment", "Bottle", "Timepoint")
+
+``` r
 #names(joined) # Check our join function
 #glimpse(joined)
 #summary(joined)
@@ -54,11 +76,12 @@ joined <- left_join (metadata, data) #left_join joins the right dataset to the l
 
 # Prepare Data
 
-Convert date and time columns from character to date values. Add columns with time elapsed for each experiment (subsetting data by experiment).
-Cells/mL to Cells/L (DOC units are in umol C/L). Remove extraneous columns. Drop NA's
+Convert date and time columns from character to date values. Add columns
+with time elapsed for each experiment (subsetting data by experiment).
+Cells/mL to Cells/L (DOC units are in umol C/L). Remove extraneous
+columns. Drop NA’s
 
-
-```{r}
+``` r
 cells <- joined %>%  
   mutate(Datetime= ymd_hm(Datetime),
          cells = Cells_ml * 1000,
@@ -72,14 +95,39 @@ cells <- joined %>%
 
 
 glimpse(cells)
+```
 
+    ## Rows: 52
+    ## Columns: 21
+    ## $ Experiment              <chr> "ASH171", "ASH171", "ASH171", "ASH171", "AS...
+    ## $ Location                <chr> "San Diego", "San Diego", "San Diego", "San...
+    ## $ Temperature_C           <dbl> 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,...
+    ## $ Depth                   <dbl> 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5...
+    ## $ Bottle                  <chr> "A", "A", "A", "A", "A", "A", "A", "B", "B"...
+    ## $ Timepoint               <dbl> 0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6, 0...
+    ## $ Treatment               <chr> "Control", "Control", "Control", "Control",...
+    ## $ Target_DOC_Amendment_uM <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1...
+    ## $ Inoculum_L              <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5...
+    ## $ Media_L                 <dbl> 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4...
+    ## $ Datetime                <dttm> 2017-12-16 21:30:00, 2017-12-17 10:00:00, ...
+    ## $ TOC_Sample              <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FA...
+    ## $ DOC_Sample              <lgl> TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALS...
+    ## $ Parallel_Sample         <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FA...
+    ## $ Cell_Sample             <lgl> TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, T...
+    ## $ DNA_Sample              <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, TR...
+    ## $ Nutrient_Sample         <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, TR...
+    ## $ hours                   <Period> 0S, 12.5S, 25.5S, 48S, 71.5S, 95S, 118.5...
+    ## $ days                    <Period> 0S, 0.520833333333333S, 1.0625S, 2S, 2.9...
+    ## $ cells                   <dbl> 1.30e+08, 1.34e+08, 1.28e+08, 1.55e+08, 1.5...
+    ## $ sd_cells                <dbl> 2.09e+07, 2.76e+07, 2.22e+07, 2.52e+07, 3.1...
 
+``` r
 #interval fails to return an interval... or rather a period
 ```
 
-# Plot Growth Curves 
+# Plot Growth Curves
 
-```{r}
+``` r
 custom.colors <- c("Control" = "#B87C37", "Ash Leachate" = "#8dafb3", "Santa Barbara" = "#dbdb65", "San Diego" = "#db65c5")
   #using hex code
 levels <- c("Control", "Ash Leachate", "San Diego", "Santa Barbara")
@@ -98,8 +146,9 @@ cells %>%
   theme_bw()
 ```
 
+![](Bacterial-Abundance_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
-```{r fig.height=4, fig.width=8}
+``` r
 # Lets add a marker for where DNA sample = T (points where we know what the community composition is)
 # Set * as the symbol (in geom_text; we also had to create a new column as the * if dna sample was taken; if not, then it printes NA
 
@@ -118,28 +167,30 @@ cells %>%
   theme_bw()
 ```
 
-We can calculate:
-  -Total change in cells from initial conditions to end of expt
-  - Specific growth rate as slope of ln(abundance) vs time during exptl growth phase
-  - Doubling time as ln(2) divided by spec growth rate
-  -mean of each of these parameters for each treatment
+    ## Warning: Removed 36 rows containing missing values (geom_text).
 
-First we need to det. where exptl growth phase occurs for each expt (if it does). Let's plot ln(abund) vs time. 
+![](Bacterial-Abundance_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
+
+We can calculate: -Total change in cells from initial conditions to end
+of expt - Specific growth rate as slope of ln(abundance) vs time during
+exptl growth phase - Doubling time as ln(2) divided by spec growth rate
+-mean of each of these parameters for each treatment
+
+First we need to det. where exptl growth phase occurs for each expt (if
+it does). Let’s plot ln(abund) vs time.
 
 ## Identify Exponential Growth Rates
 
-Recall:
-log(x) give ln(x)
-log10(x)  gives log base 10
-log2(x) gives log base 2
+Recall: log(x) give ln(x) log10(x) gives log base 10 log2(x) gives log
+base 2
 
-```{r}
+``` r
 ln_cells <- cells %>% group_by(Experiment, Treatment, Bottle) %>% 
   mutate(ln_cells = log(cells),
          diff_ln_cells = ln_cells - lag(ln_cells, default = first(ln_cells))) %>% ungroup()
 ```
 
-```{r fig.height=4, fig.width=8}
+``` r
 # View exponential growth
 
 
@@ -155,13 +206,19 @@ ln_cells %>%
   scale_fill_manual(values = custom.colors) +
   facet_grid(rows = Location~Bottle, scales = "free") +
   theme_bw()
+```
 
+    ## Warning: Removed 36 rows containing missing values (geom_text).
+
+![](Bacterial-Abundance_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+
+``` r
 # A-- Exptl growth occurs btw 3-5 days, but for B in 4-5 days
 ```
 
 # Calculate Growth Rates, Doubling Times, and Change in Cell Abundance
-```{r}
 
+``` r
 # ASH171 = Expts in SD, ASH172 = Expts in SB
 #growth <- ln_cells %>% 
  # mutate(exp_start = ifelse(Experiment == "ASH171" & Bottle == "A", 4, NA))
@@ -179,12 +236,9 @@ growth <- ln_cells %>%
 
 
 check <- growth %>% select (Experiment, Bottle, exp_start, exp_end) %>% distinct() #  double check our work above
-
-
 ```
 
-```{r}
-
+``` r
 # MUTATE to input ln(cell abund) for the start of every exponential growth curve. recall this start corresponds with a particular Timepoint value
 growth <- ln_cells %>% 
   mutate(exp_start = ifelse(Experiment == "ASH171" & Bottle == "A", 4, NA),
@@ -212,25 +266,63 @@ growth <- ln_cells %>%
 
 # Convert Bacterial Abundance and Change in Bact. Abund. to Carbon Units
 
-Apply a Carbon Conversion Factor (CCF) to bact. abundances (cells L^-1^) to generate bacterial carbon (umol C L^-1^).
+Apply a Carbon Conversion Factor (CCF) to bact. abundances (cells
+L<sup>-1</sup>) to generate bacterial carbon (umol C L<sup>-1</sup>).
 
-We will apply average carbon conversion of bacterioplankton cells from Coastal JP (~30fg C cell^-1^), reported by Fukuda et al., 1998. 
+We will apply average carbon conversion of bacterioplankton cells from
+Coastal JP (\~30fg C cell<sup>-1</sup>), reported by Fukuda et al.,
+1998.
 
-```{r}
+``` r
 bactcarbon <- growth %>% 
   mutate(bc = cells * (2.5 * 10^-9),
          delta_bc = delta_cells * (2.5 * 10^-9))
 
 glimpse(bactcarbon)
-
 ```
 
-
+    ## Rows: 52
+    ## Columns: 36
+    ## $ Experiment              <chr> "ASH171", "ASH171", "ASH171", "ASH171", "AS...
+    ## $ Location                <chr> "San Diego", "San Diego", "San Diego", "San...
+    ## $ Temperature_C           <dbl> 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,...
+    ## $ Depth                   <dbl> 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5...
+    ## $ Bottle                  <chr> "A", "A", "A", "A", "A", "A", "A", "B", "B"...
+    ## $ Timepoint               <dbl> 0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6, 0...
+    ## $ Treatment               <chr> "Control", "Control", "Control", "Control",...
+    ## $ Target_DOC_Amendment_uM <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1...
+    ## $ Inoculum_L              <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5...
+    ## $ Media_L                 <dbl> 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4...
+    ## $ Datetime                <dttm> 2017-12-16 21:30:00, 2017-12-17 10:00:00, ...
+    ## $ TOC_Sample              <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FA...
+    ## $ DOC_Sample              <lgl> TRUE, TRUE, FALSE, TRUE, FALSE, FALSE, FALS...
+    ## $ Parallel_Sample         <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, FA...
+    ## $ Cell_Sample             <lgl> TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, T...
+    ## $ DNA_Sample              <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, TR...
+    ## $ Nutrient_Sample         <lgl> TRUE, FALSE, FALSE, FALSE, FALSE, FALSE, TR...
+    ## $ hours                   <Period> 0S, 12.5S, 25.5S, 48S, 71.5S, 95S, 118.5...
+    ## $ days                    <Period> 0S, 0.520833333333333S, 1.0625S, 2S, 2.9...
+    ## $ cells                   <dbl> 1.30e+08, 1.34e+08, 1.28e+08, 1.55e+08, 1.5...
+    ## $ sd_cells                <dbl> 2.09e+07, 2.76e+07, 2.22e+07, 2.52e+07, 3.1...
+    ## $ ln_cells                <dbl> 18.68305, 18.71335, 18.66754, 18.85894, 18....
+    ## $ diff_ln_cells           <dbl> 0.000000000, 0.030305349, -0.045809536, 0.1...
+    ## $ exp_start               <dbl> 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5, 5, 5, 3...
+    ## $ exp_end                 <dbl> 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 4...
+    ## $ ln_cells_exp_start      <dbl> 18.85894, 18.85894, 18.85894, 18.85894, 18....
+    ## $ ln_cells_exp_end        <dbl> 19.74776, 19.74776, 19.74776, 19.74776, 19....
+    ## $ cells_exp_start         <dbl> 1.55e+08, 1.55e+08, 1.55e+08, 1.55e+08, 1.5...
+    ## $ cells_exp_end           <dbl> 3.77e+08, 3.77e+08, 3.77e+08, 3.77e+08, 3.7...
+    ## $ days_exp_start          <dbl> 2.979167, 2.979167, 2.979167, 2.979167, 2.9...
+    ## $ days_exp_end            <dbl> 4.937500, 4.937500, 4.937500, 4.937500, 4.9...
+    ## $ mew                     <dbl> 0.4538656, 0.4538656, 0.4538656, 0.4538656,...
+    ## $ doubling                <dbl> 1.5272081, 1.5272081, 1.5272081, 1.5272081,...
+    ## $ delta_cells             <dbl> 247000000, 247000000, 247000000, 247000000,...
+    ## $ bc                      <dbl> 0.32500, 0.33500, 0.32000, 0.38750, 0.38750...
+    ## $ delta_bc                <dbl> 0.61750, 0.61750, 0.61750, 0.61750, 0.61750...
 
 # Calculate Treatment Averages
 
-```{r}
-
+``` r
 #when calculating averages, group data 1st!
 
 averages <- bactcarbon %>% 
@@ -252,13 +344,11 @@ averages <- bactcarbon %>%
   ungroup()
 
 subset <- averages %>% select(Experiment, Treatment, Timepoint, Bottle, bc, ave_bc, sd_bc)
-
-
 ```
 
 ## Plot Treatment Averages
 
-```{r fig.height=8, fig.width=8}
+``` r
 averages %>% 
   ggplot(aes(x = days, y = ave_bc), group = interaction(Experiment, Treatment)) +
   geom_errorbar(aes(ymin = ave_bc - sd_bc, ymax = ave_bc + sd_bc, color= factor(Treatment, levels = levels)), width = 0.1) +
@@ -270,9 +360,11 @@ averages %>%
   theme_bw()
 ```
 
+![](Bacterial-Abundance_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
 # Barplots
 
-```{r}
+``` r
 bar.data <- averages %>% 
   select(Location, Treatment, ave_mew:sd_lag)
 # many duplicated rows, repeat with distinct() fxn to cut down dataset
@@ -281,8 +373,7 @@ bar.data <- averages %>%
   select(Location, Treatment, ave_mew:sd_lag) %>% distinct()
 ```
 
-
-```{r mew barplot}
+``` r
 mew <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_mew),
          group = interaction(Location, Treatment)) + 
@@ -296,7 +387,7 @@ mew <- bar.data %>%
 # use tilde before factor in place of rows = or col =  argument
 ```
 
-```{r doubling barplot}
+``` r
 doubling <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_doubling),
          group = interaction(Location, Treatment)) + 
@@ -305,11 +396,9 @@ doubling <- bar.data %>%
   facet_grid(~factor(Location, levels = levels), scales = "free") +
   labs(x = "", y = expression("Doubling Time, d"^-1)) +
   theme_bw()
-
 ```
 
-
-```{r Delta bc}
+``` r
 delta_bc <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_delta_bc),
          group = interaction(Location, Treatment)) + 
@@ -320,7 +409,7 @@ delta_bc <- bar.data %>%
   theme_bw()
 ```
 
-```{r lag phase}
+``` r
 lag <- bar.data %>%
   ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_lag),
          group = interaction(Location, Treatment)) + 
@@ -333,20 +422,23 @@ lag <- bar.data %>%
 
 ## Attach all barplots together
 
-```{r}
+``` r
 #install.packages("patchwork")
 library(patchwork)
 ```
 
-```{r fig.height=7}
+    ## Warning: package 'patchwork' was built under R version 4.0.3
+
+``` r
 lag + delta_bc + mew + doubling + plot_annotation(tag_levels = "a")
 ```
 
+![](Bacterial-Abundance_files/figure-gfm/unnamed-chunk-15-1.png)<!-- -->
+
 # Save Data
 
-```{r}
+``` r
 saveRDS(averages, "~/Documents/github_144l/144l_students/Output_Data/Week 3/ACIDD_Exp_Processed_BactAbund_rds")
 
 #save_csv
 ```
-
