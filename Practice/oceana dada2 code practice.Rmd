@@ -1,0 +1,231 @@
+---
+title: "DADA 2 Oceana"
+author: "Oceana Tavasieff"
+date: "11/13/2020"
+output: gitbhub_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message=FALSE}
+#if (!requireNamespace("BiocManager", quietly = TRUE))
+    #install.packages("BiocManager")
+#BiocManager::install("dada2", version = "3.11")
+library(dada2); packageVersion("dada2")
+library(tidyverse)
+library(ShortRead)
+
+```
+
+```{r}
+path <- "~/Documents/github_144l/144l_students/Input_Data/week5/ACIDD_Remin_fastq/"
+list.files(path)
+
+# Get matched lists of reads:
+# Forward and reverse fastq filenames have format: SAMPLENAME_R1_001.fastq and SAMPLENAME_R2_001.fastq
+fnFs <- sort(list.files(path, pattern="_R1_001.fastq", full.names = TRUE))
+fnRs <- sort(list.files(path, pattern="_R2_001.fastq", full.names = TRUE))
+
+```
+
+# Check for and remove primers
+
+```{r}
+FWD <- "GTGYCAGCMGCCGCGGTAA" # for V4 region of 16S
+REV <- "GGACTACNVGGGTWTCTAAT" 
+
+allOrients <- function(primer) {
+    # Create all orientations of the input sequence
+    require(Biostrings)
+    dna <- DNAString(primer)  # The Biostrings works w/ DNAString objects rather than character vectors
+    orients <- c(Forward = dna, Complement = complement(dna), Reverse = reverse(dna), 
+        RevComp = reverseComplement(dna))
+    return(sapply(orients, toString))  # Convert back to character vector
+}
+FWD.orients <- allOrients(FWD)
+REV.orients <- allOrients(REV)
+FWD.orients
+REV.orients
+```
+
+## count primers
+
+```{r}
+primerHits <- function(primer, fn) {
+  #Counts no. reads in which primer is found
+  nhits <- vcountPattern(primer, sread(readFastq(fn)), fixed =FALSE)
+  return(sum(nhits > 0))
+}
+
+rbind(FWD.ForwardReads = sapply(FWD.orients, primerHits, fn = fnFs[[1]]),
+      FWD.ReverseReads = sapply(FWD.orients, primerHits, fn = fnRs[[1]]),
+      REV.ForwardReads = sapply(REV.orients, primerHits, fn = fnFs[[1]]),
+      REV.ReverseReads = sapply(REV.orients, primerHits, fn = fnRs[[1]])
+)
+
+# Want this table to have all zeroes, if a few exist (among 10's of thousands of reads), its ok
+```
+
+# Inspect Read Quality
+
+```{r}
+plotQualityProfile(fnFs[1:16])
+#truncate FWD READs @ base 240 to minimize quality drop off.(trim last 10 nucleotides)
+```
+
+```{r}
+plotQualityProfile(fnRs[1:16])
+
+#reverse strand poorer quality as expected. Quality drops of at about 150bp.
+# Trimming poor quality regions improves sensitivty of error model
+```
+
+# Filter and Trim
+
+```{r}
+# FIRST, we create new versions of data (dont mess with raw data) and a new folder for filtered reads
+
+# Extract sample names, assuming filenames have format: SAMPLENAME_LXXX.fastq
+sample.names <- sapply(strsplit(basename(fnFs), "_L"), `[`, 1)
+sample.names
+
+#NEXT, create a file path for filtered reads
+
+filt_path <- file.path(path, "filtered")
+
+# FINALLY, tag forward and reverse strings (as they will be trimmed differently) 
+# _F is for filtered and trimmed fwd reads, _R for rev
+# file names will be saved as sample_name + string (_F_filt.fastq)
+
+filtFs <- file.path(path, "filtered", paste0(sample.names, "_F_filt.fastq.gz"))
+filtRs <- file.path(path, "filtered", paste0(sample.names, "_R_filt.fastq.gz"))
+
+```
+
+We’ll use standard filtering parameters: maxN=0 (DADA2 requires no Ns), truncQ=2, rm.phix=TRUE and maxEE=2. The maxEE parameter sets the maximum number of “expected errors” allowed in a read, which is a better filter than simply averaging quality scores.
+
+```{r}
+out <- filterAndTrim(fnFs, filtFs, fnRs, filtRs, truncLen=c(240,150),
+              maxN=0, maxEE=c(2,2), truncQ=2, rm.phix=TRUE,
+              compress=TRUE, multithread=FALSE) # On Windows set multithread=FALSE
+# takes a few minutes to run
+# truncLen set based on visualizing quality scores for fwd, rev reads
+# maxN removes any "ambiguous" base reads. when in sequencing N is used as a placeholder for an uncertain nucleotide
+out #similar number of reads in and out (REASONABLE)
+
+# Now we have a bunch of "high quality sequences"
+```
+
+# Error model
+
+Probablity that a particular base pair in a sequence is real, help determine real differences.
+
+```{r}
+errF <- learnErrors(filtFs, multithread=FALSE)
+errR <- learnErrors(filtRs, multithread=F)
+```
+
+## Visualize error model results
+
+```{r}
+plotErrors(errF, nominalQ=TRUE)
+
+# Shows possible transition rates for nucleotides (eg. A to a C) in sequencing. points are observed error rates based on quality scores. red line shows error rates expected. black line is model fit to error rates. error rates decrease with quality score
+```
+
+# Dereplication
+
+DADA2 combines all identical sequences into one unique sequence, then tally the number of unique sequences (ASVs).
+
+```{r}
+derepFs <- derepFastq(filtFs, verbose = TRUE)
+derepRs <- derepFastq(filtRs, verbose = TRUE)
+
+# assign names to derep-class objects from sample nales
+names(derepFs) <- sample.names
+names(derepRs) <- sample.names
+```
+
+# Infer Sequence Variants
+
+Apply dada2 sample inference algorithim to derep data/ Removve sequence variantes with excessive error rates. 
+
+```{r}
+dadaFs <- dada(derepFs, err=errF, multithread=TRUE)
+dadaRs <- dada(derepRs, err=errR, multithread=TRUE)
+```
+
+## Merge overlapping reads
+
+Will decrease ASVs.
+
+**IF there were hits for reverse complements in the FWD. reverse reads and REV forwardreads, can be trimmed with arg:  trimOverhang = T. **
+
+```{r}
+mergers <- mergePairs(dadaFs, derepFs, dadaRs, derepRs, verbose = TRUE, trimOverhang = T) 
+# merge fwd and reverse reads
+
+```
+
+```{r}
+head(mergers[[1]])
+
+```
+
+## Save unassigned reads
+
+```{r}
+saveRDS(mergers, "~/Documents/github_144l/144l_students/Output_Data/Week 5/dada_merged.rds")
+saveRDS(mergers, "~/Documents/github_144l/144l_students/Input_Data/week6/dada_merged.rds")
+```
+
+
+# Construct sequence table (~OTU table)
+
+```{r}
+seqtab <- makeSequenceTable(mergers)
+dim(seqtab) # 16 samples, XX =  numbers of unique sequences
+```
+
+```{r}
+table(nchar(getSequences(seqtab)))
+
+# distribution of sequence lengths. Compare to spread of ITS (ITS has much broader)
+```
+
+# Remove Chimeras
+
+Chimeras are basically PCR elements that combine; meaning non-biological sequences
+
+```{r}
+seqtab.nochim <- removeBimeraDenovo(seqtab, method="consensus", multithread=TRUE, verbose=TRUE)
+
+# columns = unique sequences, rows = sample names, data = abundance
+dim(seqtab.nochim) # compare dimensions
+```
+
+```{r}
+sum(seqtab.nochim)/sum(seqtab) # percent samples retained
+```
+
+
+# Assign Taxonomy
+
+Using Silva database
+```{r}
+taxa <- assignTaxonomy(seqtab.nochim, "~/Documents/github_144l/144l_students/Input_Data/week5/Reference_Database/silva_nr_v138_train_set.fa", multithread = TRUE)
+```
+
+```{r}
+#Create table of taxa data, one with sequences and assignments, one with just taxa
+
+saveRDS(t(seqtab.nochim), "~/Documents/github_144l/144l_students/Output_Data/Week 5/seqtab-nochimtaxa.rds") # t is transpose so that we switch column and row names
+
+
+saveRDS(taxa, "~/Documents/github_144l/144l_students/Output_Data/Week 5/taxa.rds")
+
+
+saveRDS(t(seqtab.nochim), "~/Documents/github_144l/144l_students/Input_Data/week6/seqtab-nochimtaxa.rds") # t is transpose so that we switch column and row names
+saveRDS(taxa, "~/Documents/github_144l/144l_students/Input_Data/week6/taxa.rds")
