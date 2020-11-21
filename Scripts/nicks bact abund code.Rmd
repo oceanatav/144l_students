@@ -1,0 +1,621 @@
+---
+title: "Nick's Week 4 144L TOC code"
+author: "Oceana Tavasieff"
+date: "11/18/2020"
+output: html_document
+---
+144L\_TOC
+================
+Nicholas Baetge
+11/16/2020
+
+# Intro
+
+This document shows how **individual bottle** TOC/DOC data from ACIDD
+remineralization experiments were processed, QC’d, and analyzed.
+
+``` {r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+# Import Data
+
+```{r}
+excel_sheets("~/Documents/github_144l/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx")
+```
+
+    ## [1] "Metadata" "Data"
+
+```{r}
+metadata <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Metadata")
+
+data <- read_excel("~/Documents/github_144l/144l_students/Input_Data/week4/144L_2018_Exp_TOC.xlsx", sheet = "Data")
+```
+
+```{r}
+glimpse(metadata)
+```
+
+# Prepare data
+
+```{r}
+joined <- left_join(metadata, data)
+```
+
+    ## Joining, by = c("Bottle", "Timepoint")
+
+```{r}
+toc <- joined %>% 
+  mutate(Datetime = ymd_hm(Datetime)) %>% 
+  group_by(Bottle) %>% 
+  mutate(interv = interval(first(Datetime), Datetime),
+         hours = interv/3600, 
+         days = hours/24) %>% 
+  ungroup() %>% 
+  rename(sd_TOC = TOC_sd,
+         sd_PTOC = PTOC_sd) %>%
+  select(Experiment:Datetime, hours, days, everything(), -c(contains("Sample"), interv))
+```
+
+```{r}
+glimpse(toc)
+```
+
+    ## Rows: 80
+    ## Columns: 17
+    ## $ Experiment           <chr> "144L_2018", "144L_2018", "144L_2018", "144L_201…
+    ## $ Location             <chr> "Campus Point", "Campus Point", "Campus Point", …
+    ## $ Temperature          <dbl> 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, …
+    ## $ Depth                <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ Bottle               <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A"…
+    ## $ Timepoint            <dbl> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, …
+    ## $ Treatment            <chr> "Control", "Control", "Control", "Control", "Con…
+    ## $ Target_DOC_Amendment <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ Inoculum_L           <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5…
+    ## $ Media_L              <dbl> 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5…
+    ## $ Datetime             <dttm> 2018-10-15 16:30:00, 2018-10-16 08:00:00, 2018-…
+    ## $ hours                <dbl> 0.0, 15.5, 27.5, 39.5, 51.5, 63.5, 75.5, 87.5, 9…
+    ## $ days                 <dbl> 0.0000000, 0.6458333, 1.1458333, 1.6458333, 2.14…
+    ## $ TOC                  <dbl> 81.30000, NA, NA, NA, 81.77997, NA, NA, NA, 78.8…
+    ## $ sd_TOC               <dbl> 0.40000000, NA, NA, NA, NA, NA, NA, NA, 0.387250…
+    ## $ PTOC                 <dbl> 81.3, NA, NA, NA, 79.5, NA, NA, NA, 78.3, 78.0, …
+    ## $ sd_PTOC              <dbl> 0.4, NA, NA, NA, 0.6, NA, NA, NA, 0.2, 0.6, 0.2,…
+
+# Plot the curves
+
+## Pivot data
+
+```{r}
+pivot_toc <- toc %>%
+  select(Bottle, Treatment, days, TOC, PTOC) %>% 
+  pivot_longer(TOC:PTOC, names_to = "sample", values_to = "value") 
+
+pivot_toc_sd <- toc %>% 
+  select(Bottle, Treatment, days, sd_TOC, sd_PTOC) %>%
+  pivot_longer(sd_TOC:sd_PTOC, names_to = "sample", names_prefix = "sd_", values_to = "sd") 
+
+pivoted <- left_join(pivot_toc, pivot_toc_sd) %>% 
+  mutate(sample = ifelse(sample == "TOC", "Bottle", "Vial"))
+```
+
+    ## Joining, by = c("Bottle", "Treatment", "days", "sample")
+
+```{r}
+glimpse(pivoted)
+```
+
+    ## Rows: 160
+    ## Columns: 6
+    ## $ Bottle    <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A", "A", "A",…
+    ## $ Treatment <chr> "Control", "Control", "Control", "Control", "Control", "Con…
+    ## $ days      <dbl> 0.0000000, 0.0000000, 0.6458333, 0.6458333, 1.1458333, 1.14…
+    ## $ sample    <chr> "Bottle", "Vial", "Bottle", "Vial", "Bottle", "Vial", "Bott…
+    ## $ value     <dbl> 81.30000, 81.30000, NA, NA, NA, NA, NA, NA, 81.77997, 79.50…
+    ## $ sd        <dbl> 0.4000000, 0.4000000, NA, NA, NA, NA, NA, NA, NA, 0.6000000…
+
+## Plot
+
+```{r}
+custom.colors <- c("Control" = "#377EB8", "Ash Leachate" = "#4DAF4A", "Glucose_Nitrate_Phosphate" = "#E41A1C", "Mud Leachate" = "#FF7F00", "Vial" = "#377EB8", "Bottle" = "#E41A1C")
+levels <- c("Control", "Glucose_Nitrate_Phosphate", "Ash Leachate",  "Mud Leachate", "Bottle", "Vial")
+
+pivoted %>% 
+  drop_na(value) %>% 
+  mutate(Treatment = factor(Treatment, levels = levels),
+         sample = factor(sample, levels = levels)) %>% 
+  ggplot(aes(x = days, y = value, group = interaction(Treatment, Bottle))) +
+  geom_errorbar(aes(ymin = value - sd, ymax = value + sd, color = sample), width = 0.4) +
+  geom_point(aes(fill = sample), size = 3, shape = 21, alpha = 0.7) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  labs(x = "Days", y = expression("Total Organic Carbon, µmol C L"^-1), color = "", fill = "") +
+  theme_bw() +
+  facet_grid(rows = "Treatment", scales = "free") + 
+  guides(color = F)
+```
+
+![](144L_TOC_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+The analytical detection limit for our TOC analysis is ~1.5 µmol C
+L<sup>-1</sup>.
+
+# TOC v PTOC (bottle v vial samples)
+
+```{r}
+# install.packages("lmodel2")
+library(lmodel2)
+
+reg.data <- toc %>%
+  drop_na(TOC) %>% 
+  filter(Timepoint > 0)
+
+
+reg <- lmodel2(PTOC ~ TOC, data = reg.data, nperm = 99)
+```
+
+    ## RMA was not requested: it will not be computed.
+
+```{r}
+reg
+```
+
+    ## 
+    ## Model II regression
+    ## 
+    ## Call: lmodel2(formula = PTOC ~ TOC, data = reg.data, nperm = 99)
+    ## 
+    ## n = 16   r = 0.9604998   r-square = 0.9225598 
+    ## Parametric P-values:   2-tailed = 3.623619e-09    1-tailed = 1.811809e-09 
+    ## Angle between the two OLS regression lines = 2.307491 degrees
+    ## 
+    ## Permutation tests of OLS, MA, RMA slopes: 1-tailed, tail corresponding to sign
+    ## A permutation test of r is equivalent to a permutation test of the OLS slope
+    ## P-perm for SMA = NA because the SMA slope cannot be tested
+    ## 
+    ## Regression results
+    ##   Method Intercept     Slope Angle (degrees) P-perm (1-tailed)
+    ## 1    OLS  1.291392 0.9890968        44.68594              0.01
+    ## 2     MA -2.226082 1.0310159        45.87490              0.01
+    ## 3    SMA -2.121795 1.0297731        45.84037                NA
+    ## 
+    ## Confidence intervals
+    ##   Method 2.5%-Intercept 97.5%-Intercept 2.5%-Slope 97.5%-Slope
+    ## 1    OLS      -12.50802        15.09081  0.8248319    1.153362
+    ## 2     MA      -17.99796        11.05134  0.8727838    1.218975
+    ## 3    SMA      -16.99788        10.56939  0.8785273    1.207057
+    ## 
+    ## Eigenvalues: 34.74849 0.6994871 
+    ## 
+    ## H statistic used for computing C.I. of MA: 0.006888855
+
+```{r}
+intercept <- reg$regression.results[3, 2]
+slope <- reg$regression.results[3, 3]
+
+two_int <- reg$confidence.intervals[3, 2] 
+two_slope <- reg$confidence.intervals[3, 4]
+nine_int <- reg$confidence.intervals[3, 3]
+nine_slope <- reg$confidence.intervals[3, 5]
+```
+
+```{r}
+reg.data %>% 
+  ggplot(aes(x = TOC, y = PTOC)) +
+  geom_errorbar(aes(ymin = PTOC - sd_PTOC, ymax = PTOC + sd_PTOC), width = 0.05) +
+  # geom_errorbarh(aes(xmin = TOC - sd_TOC, xmax = PTOC + sd_PTOC), width = 0.05) +
+  geom_point(fill = "white", shape = 21, size = 4, alpha = 0.7) +
+  geom_abline(intercept = intercept, slope = slope, linetype = 2, size = 1) +
+  geom_abline(intercept = two_int, slope = two_slope, color = "black", linetype = 3, size = 1) +
+  geom_abline(intercept = nine_int, slope = nine_slope, color = "black", linetype = 3, size = 1) +
+  labs(x = expression("Bottle TOC, µmol C L"^-1), y = expression("Vial TOC, µmol C L"^-1)) +
+  theme_bw() +
+  annotate( geom = "text", label = expression(atop("y = 1.02x + -2.12", paste("r"^2," = 0.92, ", italic("p "), "< 0.01"))), x = 80, y = 90, size = 4) 
+```
+
+    ## Warning in is.na(x): is.na() applied to non-(list or vector) of type
+    ## 'expression'
+
+![](144L_TOC_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
+
+```{r}
+bc <- read_rds("~/Documents/github_144l/144l_students/Output_Data/week3/144L_Exp_Processed_BactAbund.rds")
+
+merge <- left_join(toc, bc) %>% 
+  select(Experiment:days, TOC:sd_PTOC, cells:diff_ln_cells, bc, ave_bc, sd_bc, everything(), -c(contains("Sample")) ) %>% 
+  group_by(Treatment, Bottle) %>% 
+  fill(exp_start:sd_lag) %>% 
+  ungroup()
+```
+
+    ## Joining, by = c("Experiment", "Location", "Temperature", "Depth", "Bottle", "Timepoint", "Treatment", "Target_DOC_Amendment", "Inoculum_L", "Media_L", "Datetime", "hours", "days")
+
+```{r}
+glimpse(merge)
+```
+
+    ## Rows: 80
+    ## Columns: 45
+    ## $ Experiment           <chr> "144L_2018", "144L_2018", "144L_2018", "144L_201…
+    ## $ Location             <chr> "Campus Point", "Campus Point", "Campus Point", …
+    ## $ Temperature          <dbl> 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, …
+    ## $ Depth                <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ Bottle               <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A"…
+    ## $ Timepoint            <dbl> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, …
+    ## $ Treatment            <chr> "Control", "Control", "Control", "Control", "Con…
+    ## $ Target_DOC_Amendment <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ Inoculum_L           <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5…
+    ## $ Media_L              <dbl> 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5…
+    ## $ Datetime             <dttm> 2018-10-15 16:30:00, 2018-10-16 08:00:00, 2018-…
+    ## $ hours                <dbl> 0.0, 15.5, 27.5, 39.5, 51.5, 63.5, 75.5, 87.5, 9…
+    ## $ days                 <dbl> 0.0000000, 0.6458333, 1.1458333, 1.6458333, 2.14…
+    ## $ TOC                  <dbl> 81.30000, NA, NA, NA, 81.77997, NA, NA, NA, 78.8…
+    ## $ sd_TOC               <dbl> 0.40000000, NA, NA, NA, NA, NA, NA, NA, 0.387250…
+    ## $ PTOC                 <dbl> 81.3, NA, NA, NA, 79.5, NA, NA, NA, 78.3, 78.0, …
+    ## $ sd_PTOC              <dbl> 0.4, NA, NA, NA, 0.6, NA, NA, NA, 0.2, 0.6, 0.2,…
+    ## $ cells                <dbl> 332531522, 523943125, 859019934, 906998856, 9330…
+    ## $ ln_cells             <dbl> 19.62225, 20.07689, 20.57130, 20.62565, 20.65394…
+    ## $ diff_ln_cells        <dbl> 0.000000000, 0.454648479, 0.494408990, 0.0543490…
+    ## $ bc                   <dbl> 0.8313288, 1.3098578, 2.1475498, 2.2674971, 2.33…
+    ## $ ave_bc               <dbl> 0.9022187, 1.3301541, 1.9535757, 2.3515191, 2.54…
+    ## $ sd_bc                <dbl> 0.10025342, 0.02870334, 0.27432087, 0.11882499, …
+    ## $ exp_start            <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ exp_end              <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ ln_cells_exp_start   <dbl> 19.62225, 19.62225, 19.62225, 19.62225, 19.62225…
+    ## $ ln_cells_exp_end     <dbl> 20.07689, 20.07689, 20.07689, 20.07689, 20.07689…
+    ## $ cells_exp_start      <dbl> 332531522, 332531522, 332531522, 332531522, 3325…
+    ## $ cells_exp_end        <dbl> 523943125, 523943125, 523943125, 523943125, 5239…
+    ## $ days_exp_start       <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ days_exp_end         <dbl> 0.6458333, 0.6458333, 0.6458333, 0.6458333, 0.64…
+    ## $ mew                  <dbl> 0.7039718, 0.7039718, 0.7039718, 0.7039718, 0.70…
+    ## $ doubling             <dbl> 0.9846235, 0.9846235, 0.9846235, 0.9846235, 0.98…
+    ## $ delta_cells          <dbl> 191411603, 191411603, 191411603, 191411603, 1914…
+    ## $ delta_bc             <dbl> 0.4785290, 0.4785290, 0.4785290, 0.4785290, 0.47…
+    ## $ ave_mew              <dbl> 0.6056875, 0.6056875, 0.6056875, 0.6056875, 0.60…
+    ## $ sd_mew               <dbl> 0.10113376, 0.10113376, 0.10113376, 0.10113376, …
+    ## $ ave_doubling         <dbl> 1.1753457, 1.1753457, 1.1753457, 1.1753457, 1.17…
+    ## $ sd_doubling          <dbl> 0.196251588, 0.196251588, 0.196251588, 0.1962515…
+    ## $ ave_delta_cells      <dbl> 171174186, 171174186, 171174186, 171174186, 1711…
+    ## $ sd_delta_cells       <dbl> 20824130, 20824130, 20824130, 20824130, 20824130…
+    ## $ ave_delta_bc         <dbl> 0.4279355, 0.4279355, 0.4279355, 0.4279355, 0.42…
+    ## $ sd_delta_bc          <dbl> 0.05206033, 0.05206033, 0.05206033, 0.05206033, …
+    ## $ ave_lag              <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ sd_lag               <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+
+```{r}
+subset <- merge %>% 
+  select(Experiment, Treatment, Bottle, days, PTOC, bc)
+```
+
+# Interpolate
+
+```{r}
+# install.packages("zoo")
+library(zoo)
+```
+
+    ## 
+    ## Attaching package: 'zoo'
+
+    ## The following objects are masked from 'package:base':
+    ## 
+    ##     as.Date, as.Date.numeric
+
+We only want to interpolate within an experiment and not across
+experiments, so we’ll perform the interpolation by using the
+split-apply-combine strategy.
+
+  - split the dataframe into a list of its elements (in this case,
+    experiments and bottles)
+  - apply the interpolation function to each of the list elements
+  - combine the results into a new dataframe
+
+## Split
+
+```{r}
+to_interpolate <- merge %>% 
+  select(Bottle, Timepoint, days, PTOC, bc) %>% 
+  group_by(Bottle) # first we'll define the grouping of our dataframe
+
+list <- to_interpolate %>% 
+  group_split()  #then we can convert the dataframe into a list, broken up by the groups (list elements)
+
+keys <- to_interpolate %>% 
+  group_keys() %>%
+  mutate(key = paste(Bottle))
+
+names(list) <- keys$key
+```
+
+## Write the function
+
+```{r}
+interp.func <- function(x) {
+  y <- zoo(x, order.by = x$days) # orders our observations
+  interp_toc <- round(as.numeric(na.approx(y$PTOC, na.rm = F)), 1) # interpolates toc
+  interp_bc <- round(as.numeric(na.approx(y$bc, na.rm = F)), 1)
+  z <- cbind(y, interp_toc, interp_bc) #combines the columns
+  as_tibble(z) #convert to dataframe
+}
+```
+
+## Apply and Combine
+
+```{r}
+interpolated <- lapply(list, interp.func) %>% 
+  plyr::ldply(., as.data.frame) %>% 
+  select(-c(.id, PTOC, bc, days)) %>% 
+  mutate_at(vars(Timepoint:interp_bc), as.numeric) %>% 
+  left_join(merge, .)
+```
+
+    ## Joining, by = c("Bottle", "Timepoint")
+
+```{r}
+glimpse(interpolated)
+```
+
+    ## Rows: 80
+    ## Columns: 47
+    ## $ Experiment           <chr> "144L_2018", "144L_2018", "144L_2018", "144L_201…
+    ## $ Location             <chr> "Campus Point", "Campus Point", "Campus Point", …
+    ## $ Temperature          <dbl> 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, …
+    ## $ Depth                <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ Bottle               <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A"…
+    ## $ Timepoint            <dbl> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, …
+    ## $ Treatment            <chr> "Control", "Control", "Control", "Control", "Con…
+    ## $ Target_DOC_Amendment <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ Inoculum_L           <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5…
+    ## $ Media_L              <dbl> 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5…
+    ## $ Datetime             <dttm> 2018-10-15 16:30:00, 2018-10-16 08:00:00, 2018-…
+    ## $ hours                <dbl> 0.0, 15.5, 27.5, 39.5, 51.5, 63.5, 75.5, 87.5, 9…
+    ## $ days                 <dbl> 0.0000000, 0.6458333, 1.1458333, 1.6458333, 2.14…
+    ## $ TOC                  <dbl> 81.30000, NA, NA, NA, 81.77997, NA, NA, NA, 78.8…
+    ## $ sd_TOC               <dbl> 0.40000000, NA, NA, NA, NA, NA, NA, NA, 0.387250…
+    ## $ PTOC                 <dbl> 81.3, NA, NA, NA, 79.5, NA, NA, NA, 78.3, 78.0, …
+    ## $ sd_PTOC              <dbl> 0.4, NA, NA, NA, 0.6, NA, NA, NA, 0.2, 0.6, 0.2,…
+    ## $ cells                <dbl> 332531522, 523943125, 859019934, 906998856, 9330…
+    ## $ ln_cells             <dbl> 19.62225, 20.07689, 20.57130, 20.62565, 20.65394…
+    ## $ diff_ln_cells        <dbl> 0.000000000, 0.454648479, 0.494408990, 0.0543490…
+    ## $ bc                   <dbl> 0.8313288, 1.3098578, 2.1475498, 2.2674971, 2.33…
+    ## $ ave_bc               <dbl> 0.9022187, 1.3301541, 1.9535757, 2.3515191, 2.54…
+    ## $ sd_bc                <dbl> 0.10025342, 0.02870334, 0.27432087, 0.11882499, …
+    ## $ exp_start            <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ exp_end              <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ ln_cells_exp_start   <dbl> 19.62225, 19.62225, 19.62225, 19.62225, 19.62225…
+    ## $ ln_cells_exp_end     <dbl> 20.07689, 20.07689, 20.07689, 20.07689, 20.07689…
+    ## $ cells_exp_start      <dbl> 332531522, 332531522, 332531522, 332531522, 3325…
+    ## $ cells_exp_end        <dbl> 523943125, 523943125, 523943125, 523943125, 5239…
+    ## $ days_exp_start       <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ days_exp_end         <dbl> 0.6458333, 0.6458333, 0.6458333, 0.6458333, 0.64…
+    ## $ mew                  <dbl> 0.7039718, 0.7039718, 0.7039718, 0.7039718, 0.70…
+    ## $ doubling             <dbl> 0.9846235, 0.9846235, 0.9846235, 0.9846235, 0.98…
+    ## $ delta_cells          <dbl> 191411603, 191411603, 191411603, 191411603, 1914…
+    ## $ delta_bc             <dbl> 0.4785290, 0.4785290, 0.4785290, 0.4785290, 0.47…
+    ## $ ave_mew              <dbl> 0.6056875, 0.6056875, 0.6056875, 0.6056875, 0.60…
+    ## $ sd_mew               <dbl> 0.10113376, 0.10113376, 0.10113376, 0.10113376, …
+    ## $ ave_doubling         <dbl> 1.1753457, 1.1753457, 1.1753457, 1.1753457, 1.17…
+    ## $ sd_doubling          <dbl> 0.196251588, 0.196251588, 0.196251588, 0.1962515…
+    ## $ ave_delta_cells      <dbl> 171174186, 171174186, 171174186, 171174186, 1711…
+    ## $ sd_delta_cells       <dbl> 20824130, 20824130, 20824130, 20824130, 20824130…
+    ## $ ave_delta_bc         <dbl> 0.4279355, 0.4279355, 0.4279355, 0.4279355, 0.42…
+    ## $ sd_delta_bc          <dbl> 0.05206033, 0.05206033, 0.05206033, 0.05206033, …
+    ## $ ave_lag              <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ sd_lag               <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ interp_toc           <dbl> 81.3, 80.8, 80.3, 79.9, 79.5, 79.2, 78.9, 78.6, …
+    ## $ interp_bc            <dbl> 0.8, 1.3, 2.1, 2.3, 2.3, 2.2, 2.0, 2.0, 2.4, NA,…
+
+# Estimate DOC, Bioavailability, BGEs
+
+```{r}
+doc <- interpolated %>% 
+  mutate(doc = interp_toc - interp_bc) %>% 
+  group_by(Bottle) %>% 
+  mutate(bioav_doc = (first(doc) - last(na.omit(doc))) / first(doc), 
+         doc_exp_end = ifelse(Timepoint == exp_end, doc, NA),
+         delta_doc = first(doc) - doc_exp_end, 
+         tdelta_doc = first(doc) - last(na.omit(doc)),
+         bge = ifelse(delta_doc > 1.5, delta_bc/delta_doc, NA)) %>% 
+  fill(doc_exp_end:bge, .direction = "downup") %>% 
+  ungroup()
+
+glimpse(doc)
+```
+
+    ## Rows: 80
+    ## Columns: 53
+    ## $ Experiment           <chr> "144L_2018", "144L_2018", "144L_2018", "144L_201…
+    ## $ Location             <chr> "Campus Point", "Campus Point", "Campus Point", …
+    ## $ Temperature          <dbl> 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, …
+    ## $ Depth                <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ Bottle               <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A"…
+    ## $ Timepoint            <dbl> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, …
+    ## $ Treatment            <chr> "Control", "Control", "Control", "Control", "Con…
+    ## $ Target_DOC_Amendment <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ Inoculum_L           <dbl> 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5, 1.5…
+    ## $ Media_L              <dbl> 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5, 3.5…
+    ## $ Datetime             <dttm> 2018-10-15 16:30:00, 2018-10-16 08:00:00, 2018-…
+    ## $ hours                <dbl> 0.0, 15.5, 27.5, 39.5, 51.5, 63.5, 75.5, 87.5, 9…
+    ## $ days                 <dbl> 0.0000000, 0.6458333, 1.1458333, 1.6458333, 2.14…
+    ## $ TOC                  <dbl> 81.30000, NA, NA, NA, 81.77997, NA, NA, NA, 78.8…
+    ## $ sd_TOC               <dbl> 0.40000000, NA, NA, NA, NA, NA, NA, NA, 0.387250…
+    ## $ PTOC                 <dbl> 81.3, NA, NA, NA, 79.5, NA, NA, NA, 78.3, 78.0, …
+    ## $ sd_PTOC              <dbl> 0.4, NA, NA, NA, 0.6, NA, NA, NA, 0.2, 0.6, 0.2,…
+    ## $ cells                <dbl> 332531522, 523943125, 859019934, 906998856, 9330…
+    ## $ ln_cells             <dbl> 19.62225, 20.07689, 20.57130, 20.62565, 20.65394…
+    ## $ diff_ln_cells        <dbl> 0.000000000, 0.454648479, 0.494408990, 0.0543490…
+    ## $ bc                   <dbl> 0.8313288, 1.3098578, 2.1475498, 2.2674971, 2.33…
+    ## $ ave_bc               <dbl> 0.9022187, 1.3301541, 1.9535757, 2.3515191, 2.54…
+    ## $ sd_bc                <dbl> 0.10025342, 0.02870334, 0.27432087, 0.11882499, …
+    ## $ exp_start            <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ exp_end              <dbl> 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, …
+    ## $ ln_cells_exp_start   <dbl> 19.62225, 19.62225, 19.62225, 19.62225, 19.62225…
+    ## $ ln_cells_exp_end     <dbl> 20.07689, 20.07689, 20.07689, 20.07689, 20.07689…
+    ## $ cells_exp_start      <dbl> 332531522, 332531522, 332531522, 332531522, 3325…
+    ## $ cells_exp_end        <dbl> 523943125, 523943125, 523943125, 523943125, 5239…
+    ## $ days_exp_start       <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ days_exp_end         <dbl> 0.6458333, 0.6458333, 0.6458333, 0.6458333, 0.64…
+    ## $ mew                  <dbl> 0.7039718, 0.7039718, 0.7039718, 0.7039718, 0.70…
+    ## $ doubling             <dbl> 0.9846235, 0.9846235, 0.9846235, 0.9846235, 0.98…
+    ## $ delta_cells          <dbl> 191411603, 191411603, 191411603, 191411603, 1914…
+    ## $ delta_bc             <dbl> 0.4785290, 0.4785290, 0.4785290, 0.4785290, 0.47…
+    ## $ ave_mew              <dbl> 0.6056875, 0.6056875, 0.6056875, 0.6056875, 0.60…
+    ## $ sd_mew               <dbl> 0.10113376, 0.10113376, 0.10113376, 0.10113376, …
+    ## $ ave_doubling         <dbl> 1.1753457, 1.1753457, 1.1753457, 1.1753457, 1.17…
+    ## $ sd_doubling          <dbl> 0.196251588, 0.196251588, 0.196251588, 0.1962515…
+    ## $ ave_delta_cells      <dbl> 171174186, 171174186, 171174186, 171174186, 1711…
+    ## $ sd_delta_cells       <dbl> 20824130, 20824130, 20824130, 20824130, 20824130…
+    ## $ ave_delta_bc         <dbl> 0.4279355, 0.4279355, 0.4279355, 0.4279355, 0.42…
+    ## $ sd_delta_bc          <dbl> 0.05206033, 0.05206033, 0.05206033, 0.05206033, …
+    ## $ ave_lag              <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ sd_lag               <dbl> 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, …
+    ## $ interp_toc           <dbl> 81.3, 80.8, 80.3, 79.9, 79.5, 79.2, 78.9, 78.6, …
+    ## $ interp_bc            <dbl> 0.8, 1.3, 2.1, 2.3, 2.3, 2.2, 2.0, 2.0, 2.4, NA,…
+    ## $ doc                  <dbl> 80.5, 79.5, 78.2, 77.6, 77.2, 77.0, 76.9, 76.6, …
+    ## $ bioav_doc            <dbl> 0.05714286, 0.05714286, 0.05714286, 0.05714286, …
+    ## $ doc_exp_end          <dbl> 79.5, 79.5, 79.5, 79.5, 79.5, 79.5, 79.5, 79.5, …
+    ## $ delta_doc            <dbl> 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0…
+    ## $ tdelta_doc           <dbl> 4.6, 4.6, 4.6, 4.6, 4.6, 4.6, 4.6, 4.6, 4.6, 4.6…
+    ## $ bge                  <dbl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, …
+
+# Treatment averages
+
+```{r}
+averages <- doc %>% 
+  group_by(Treatment, Timepoint) %>% 
+  mutate(ave_toc = mean(PTOC),
+         sd_toc = sd(PTOC)) %>% 
+  ungroup() %>% 
+  group_by(Treatment) %>% 
+  mutate(ave_bioav_doc = mean(bioav_doc),
+         sd_bioav_doc = sd(bioav_doc),
+         ave_delta_doc = mean(delta_doc),
+         sd_delta_doc = sd(delta_doc),
+         ave_tdelta_doc = mean(tdelta_doc),
+         sd_tdelta_doc = sd(tdelta_doc),
+         ave_bge = mean(bge),
+         sd_bge = sd(bge)) %>% 
+  ungroup()
+```
+
+```{r}
+subset <- averages %>% 
+  select(Experiment, Treatment, Bottle, Timepoint, PTOC, ave_toc:sd_bge)
+
+glimpse(subset)
+```
+
+    ## Rows: 80
+    ## Columns: 15
+    ## $ Experiment     <chr> "144L_2018", "144L_2018", "144L_2018", "144L_2018", "1…
+    ## $ Treatment      <chr> "Control", "Control", "Control", "Control", "Control",…
+    ## $ Bottle         <chr> "A", "A", "A", "A", "A", "A", "A", "A", "A", "A", "B",…
+    ## $ Timepoint      <dbl> 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6, 7, …
+    ## $ PTOC           <dbl> 81.3, NA, NA, NA, 79.5, NA, NA, NA, 78.3, 78.0, 80.8, …
+    ## $ ave_toc        <dbl> 81.05, NA, NA, NA, 80.15, NA, NA, NA, 78.80, 78.15, 81…
+    ## $ sd_toc         <dbl> 0.3535534, NA, NA, NA, 0.9192388, NA, NA, NA, 0.707106…
+    ## $ ave_bioav_doc  <dbl> 0.04486216, 0.04486216, 0.04486216, 0.04486216, 0.0448…
+    ## $ sd_bioav_doc   <dbl> 0.012599734, 0.012599734, 0.012599734, 0.012599734, 0.…
+    ## $ ave_delta_doc  <dbl> 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7,…
+    ## $ sd_delta_doc   <dbl> 0.3077935, 0.3077935, 0.3077935, 0.3077935, 0.3077935,…
+    ## $ ave_tdelta_doc <dbl> 3.60, 3.60, 3.60, 3.60, 3.60, 3.60, 3.60, 3.60, 3.60, …
+    ## $ sd_tdelta_doc  <dbl> 1.0259784, 1.0259784, 1.0259784, 1.0259784, 1.0259784,…
+    ## $ ave_bge        <dbl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA…
+    ## $ sd_bge         <dbl> NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA…
+
+# Plot treatment curves (TOC)
+
+```{r}
+trt_toc <- averages %>% 
+  select(Treatment, ave_toc, days, sd_toc) %>% 
+  distinct() %>% 
+  mutate(Treatment = factor(Treatment, levels = levels)) %>% 
+  drop_na(ave_toc) %>% 
+  ggplot(aes(x = days, y = ave_toc, group = interaction(Treatment))) +
+  geom_errorbar(aes(ymin = ave_toc - sd_toc, ymax = ave_toc + sd_toc, color = Treatment), width = 0.2) +
+  geom_point(aes(fill = Treatment), size = 3, shape = 21, alpha = 0.7) +
+  geom_line(aes(color = Treatment), size = 1, alpha = 0.7) +
+  scale_color_manual(values = custom.colors) +
+  scale_fill_manual(values = custom.colors) +
+  labs(x = "Days", y = expression("Total Organic Carbon, µmol C L"^-1), color = "", fill = "") +
+  theme_bw() +
+  guides(color = F, fill = F)
+
+trt_toc
+```
+
+![](144L_TOC_files/figure-gfm/unnamed-chunk-22-1.png)<!-- -->
+
+```{r}
+library(patchwork)
+```
+
+```{r}
+trt_ba <- read_rds("~/GITHUB/144l_students/Output_Data/week3/144L_trt_ba_plot.rds")
+
+trt_ba + trt_toc + plot_annotation(tag_levels = "a") + plot_layout(guides = "collect")
+```
+
+![](144L_TOC_files/figure-gfm/unnamed-chunk-24-1.png)<!-- -->
+
+# Plot treatment averages (bars)
+
+```{r}
+bar.data <- averages %>% 
+  select(Treatment, ave_bioav_doc:sd_bge) %>% 
+  distinct() 
+```
+
+```{r}
+bioav <- bar.data %>% 
+ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_bioav_doc, group = interaction(Treatment)))  + 
+  geom_col( color = "black", fill = "white", alpha = 1) +
+  geom_errorbar(aes(ymin = ave_bioav_doc - sd_bioav_doc, ymax = ave_bioav_doc + sd_bioav_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Bioavailable DOC Fraction")), color = "") +
+  theme_bw() 
+```
+
+```{r}
+deldoc <- bar.data %>% 
+ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_delta_doc, group = interaction(Treatment)))  + 
+  geom_col(color = "black", fill = "white", alpha = 1) +
+  geom_errorbar(aes(ymin = ave_delta_doc - sd_delta_doc, ymax = ave_delta_doc + sd_delta_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("∆ DOC (to stationary), µmol C L"^-1)), color = "") +
+  theme_bw() +
+  guides(fill = F) 
+```
+
+```{r}
+total_deldoc <- bar.data %>% 
+ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_tdelta_doc, group = interaction(Treatment)))  + 
+  geom_col(color = "black", fill = "white", alpha = 1) +
+  geom_errorbar(aes(ymin = ave_tdelta_doc - sd_tdelta_doc, ymax = ave_tdelta_doc + sd_tdelta_doc), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("∆ DOC (total), µmol C L"^-1)), color = "") +
+  theme_bw() +
+  guides(fill = F) 
+```
+
+```{r}
+bge <- bar.data %>% 
+ggplot(aes(x = factor(Treatment, levels = levels), y =  ave_bge, group = interaction(Treatment)))  + 
+  geom_col(color = "black", fill = "white", alpha = 1) +
+  geom_errorbar(aes(ymin = ave_bge - sd_bge, ymax = ave_bge + sd_bge), width = 0.1, size = 0.5) +
+  labs(x = "", y = expression(paste("Bacterial Growth Efficiency")), color = "") +
+  theme_bw() +
+  guides(fill = F) 
+```
+
+```{r}
+deldoc / total_deldoc / bioav / bge + plot_annotation( tag_levels = "a")
+```
+
+    ## Warning: Removed 2 rows containing missing values (position_stack).
+
+![](144L_TOC_files/figure-gfm/unnamed-chunk-30-1.png)<!-- -->
+
+# Save data
+
+```{r}
+saveRDS(averages, "~/Documents/github_144l/144l_students/Output_Data/week4/144L_Exp_Processed_DOC_BGE.rds")
+```
